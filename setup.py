@@ -41,7 +41,7 @@ setup(
     name='impala_shell',
     version=get_version(),
     description='Impala Shell.',
-    long_description=open('README.rst').read(),
+    long_description=open('README.md').read(),
     author='Impala Dev Team',
     author_email='dev@cloudera.com',
     py_modules=['impala_shell',

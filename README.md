@@ -1,7 +1,7 @@
 ## Impala Interactive Shell
 
-To install from Cloudera's internal Githib server
+To install from Github server
 
 ```
-pip install git+git://github.mtv.cloudera.com/dknupp/impala-shell.git
+pip install git+git://github.com/dknupp/impala-shell.git
 ```

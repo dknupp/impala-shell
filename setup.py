@@ -34,7 +34,7 @@ def requirements():
 
 
 def get_version():
-    return '2.13.0'
+    return '2.10.0'
 
 
 setup(

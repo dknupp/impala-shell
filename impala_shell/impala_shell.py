@@ -1326,7 +1326,7 @@ def execute_queries_non_interactive_mode(options):
           shell.execute_query_list(queries)):
     sys.exit(1)
 
-if __name__ == "__main__":
+def main():
   # pass defaults into option parser
   parser = get_option_parser(impala_shell_defaults)
   options, args = parser.parse_args()
@@ -1478,3 +1478,6 @@ if __name__ == "__main__":
         if e.errno != errno.EINTR: raise
     finally:
       intro = ''
+
+if __name__ == "__main__":
+  main()

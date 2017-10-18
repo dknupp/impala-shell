@@ -26,6 +26,7 @@
 #
 
 import ConfigParser
+import sys
 from impala_shell_config_defaults import impala_shell_defaults
 from optparse import OptionParser
 
@@ -44,6 +45,11 @@ def get_config_from_file(config_filename):
     loaded_options = config.items(section_title);
 
     for i, (option, value) in enumerate(loaded_options):
+      if option not in impala_shell_defaults:
+        print >> sys.stderr, "WARNING: Unable to read configuration file correctly. " \
+          "Check formatting: '%s'\n" % option;
+        continue
+
       if impala_shell_defaults[option] in [True, False]:
         # validate the option if it can only be a boolean value
         # the only choice for these options is true or false
@@ -78,7 +84,9 @@ def get_option_parser(defaults):
   parser.add_option("-q", "--query", dest="query",
                     help="Execute a query without the shell")
   parser.add_option("-f", "--query_file", dest="query_file",
-                    help="Execute the queries in the query file, delimited by ;")
+                    help="Execute the queries in the query file, delimited by ;."
+                         " If the argument to -f is \"-\", then queries are read from"
+                         " stdin and terminated with ctrl-d.")
   parser.add_option("-k", "--kerberos", dest="use_kerberos",
                     action="store_true", help="Connect to a kerberized impalad")
   parser.add_option("-o", "--output_file", dest="output_file",
@@ -150,7 +158,10 @@ def get_option_parser(defaults):
   parser.add_option("--ldap_password_cmd",
                     help="Shell command to run to retrieve the LDAP password")
   parser.add_option("--var", dest="keyval", action="append",
-                    help="Define variable(s) to be used within the Impala session.")
+                    help="Define variable(s) to be used within the Impala session."
+                         " It must follow the pattern \"KEY=VALUE\","
+                         " KEY starts with an alphabetic character and"
+                         " contains alphanumeric characters or underscores.")
 
   # add default values to the help text
   for option in parser.option_list:

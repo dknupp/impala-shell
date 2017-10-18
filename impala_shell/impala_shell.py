@@ -46,7 +46,8 @@ from thrift.Thrift import TException
 
 VERSION_FORMAT = "Impala Shell v%(version)s (%(git_hash)s) built on %(build_date)s"
 VERSION_STRING = "build version not available"
-HISTORY_LENGTH = 100
+READLINE_UNAVAILABLE_ERROR = "The readline module was either not found or disabled. " \
+                             "Command history will not be collected."
 
 # Tarball / packaging build makes impala_build_version available
 try:
@@ -77,7 +78,7 @@ class ImpalaPrettyTable(prettytable.PrettyTable):
       value = unicode(value, self.encoding, "replace")
     return value
 
-class ImpalaShell(cmd.Cmd):
+class ImpalaShell(object, cmd.Cmd):
   """ Simple Impala Shell.
 
   Basic usage: type connect <host:port> to connect to an impalad
@@ -181,7 +182,12 @@ class ImpalaShell(cmd.Cmd):
       self.interactive = True
       try:
         self.readline = __import__('readline')
-        self.readline.set_history_length(HISTORY_LENGTH)
+        try:
+          self.readline.set_history_length(int(options.history_max))
+        except ValueError:
+          print_to_stderr("WARNING: history_max option malformed %s\n"
+            % options.history_max)
+          self.readline.set_history_length(1000)
       except ImportError:
         self._disable_readline()
 
@@ -507,10 +513,13 @@ class ImpalaShell(cmd.Cmd):
     summary = None
     try:
       summary = self.imp_client.get_summary(self.last_query_handle)
-    except RPCException:
-      pass
-    if summary is None:
-      print_to_stderr("Could not retrieve summary for query.")
+    except RPCException, e:
+      import re
+      error_pattern = re.compile("ERROR: Query id \d+:\d+ not found.")
+      if error_pattern.match(e.value):
+        print_to_stderr("Could not retrieve summary for query.")
+      else:
+        print_to_stderr(e)
       return CmdStatus.ERROR
     if summary.nodes is None:
       print_to_stderr("Summary not available")
@@ -705,6 +714,8 @@ class ImpalaShell(cmd.Cmd):
         self.prompt = self.DISCONNECTED_PROMPT
     except Exception, e:
       print_to_stderr("Error connecting: %s, %s" % (type(e).__name__, e))
+      # A secure connection may still be open. So we explicitly close it.
+      self.imp_client.close_connection()
       # If a connection to another impalad failed while already connected
       # reset the prompt to disconnected.
       self.server_version = self.UNKNOWN_SERVER_VERSION
@@ -910,6 +921,9 @@ class ImpalaShell(cmd.Cmd):
         num_rows = 0
 
         for rows in rows_fetched:
+          # IMPALA-4418: Break out of the loop to prevent printing an unnecessary empty line.
+          if len(rows) == 0:
+            break
           self.output_stream.write(rows)
           num_rows += len(rows)
 
@@ -937,9 +951,11 @@ class ImpalaShell(cmd.Cmd):
       if not is_dml:
         self.imp_client.close_query(self.last_query_handle, self.query_handle_closed)
       self.query_handle_closed = True
-
-      profile = self.imp_client.get_runtime_profile(self.last_query_handle)
-      self.print_runtime_profile(profile)
+      try:
+        profile = self.imp_client.get_runtime_profile(self.last_query_handle)
+        self.print_runtime_profile(profile)
+      except RPCException, e:
+        if self.show_profiles: raise e
       return CmdStatus.SUCCESS
     except RPCException, e:
       # could not complete the rpc successfully
@@ -1054,15 +1070,40 @@ class ImpalaShell(cmd.Cmd):
 
   def do_history(self, args):
     """Display command history"""
-    # Deal with readline peculiarity. When history does not exists,
+    # Deal with readline peculiarity. When history does not exist,
     # readline returns 1 as the history length and stores 'None' at index 0.
     if self.readline and self.readline.get_current_history_length() > 0:
       for index in xrange(1, self.readline.get_current_history_length() + 1):
         cmd = self.readline.get_history_item(index)
         print_to_stderr('[%d]: %s' % (index, cmd))
     else:
-      print_to_stderr("The readline module was either not found or disabled. Command "
-                      "history will not be collected.")
+      print_to_stderr(READLINE_UNAVAILABLE_ERROR)
+
+  def do_rerun(self, args):
+    """Rerun a command with an command index in history
+    Example: @1;
+    """
+    history_len = self.readline.get_current_history_length()
+    # Rerun command shouldn't appear in history
+    self.readline.remove_history_item(history_len - 1)
+    history_len -= 1
+    if not self.readline:
+      print_to_stderr(READLINE_UNAVAILABLE_ERROR)
+      return CmdStatus.ERROR
+    try:
+      cmd_idx = int(args)
+    except ValueError:
+      print_to_stderr("Command index to be rerun must be an integer.")
+      return CmdStatus.ERROR
+    if not (0 < cmd_idx <= history_len or -history_len <= cmd_idx < 0):
+      print_to_stderr("Command index out of range. Valid range: [1, {0}] and [-{0}, -1]"
+                      .format(history_len))
+      return CmdStatus.ERROR
+    if cmd_idx < 0:
+      cmd_idx += history_len + 1
+    cmd = self.readline.get_history_item(cmd_idx)
+    print_to_stderr("Rerunning " + cmd)
+    return self.onecmd(cmd.rstrip(";"))
 
   def do_tip(self, args):
     """Print a random tip"""
@@ -1110,6 +1151,20 @@ class ImpalaShell(cmd.Cmd):
         # The history file is not writable, disable readline.
         self._disable_readline()
 
+  def parseline(self, line):
+    """Parse the line into a command name and a string containing
+    the arguments.  Returns a tuple containing (command, args, line).
+    'command' and 'args' may be None if the line couldn't be parsed.
+    'line' in return tuple is the rewritten original line, with leading
+    and trailing space removed and special characters transformed into
+    their aliases.
+    """
+    line = line.strip()
+    if line and line[0] == '@':
+      line = 'rerun ' + line[1:]
+    return super(ImpalaShell, self).parseline(line)
+
+
   def _replace_history_delimiters(self, src_delim, tgt_delim):
     """Replaces source_delim with target_delim for all items in history.
 
@@ -1153,7 +1208,7 @@ class ImpalaShell(cmd.Cmd):
     if not self.imp_client.connected:
       print_to_stderr('Not connected to Impala, could not execute queries.')
       return False
-    queries = [ self.sanitise_input(q) for q in self.cmdqueue + queries ]
+    queries = [self.sanitise_input(q) for q in queries]
     for q in queries:
       if self.onecmd(q) is CmdStatus.ERROR:
         print_to_stderr('Could not execute command: %s' % q)
@@ -1238,8 +1293,8 @@ def parse_variables(keyvals):
     for keyval in keyvals:
       match = re.match(kv_pattern, keyval)
       if not match:
-        print_to_stderr('Error: Could not parse key-value "%s". ' + \
-                        'It must follow the pattern "KEY=VALUE".' % (keyval,))
+        print_to_stderr('Error: Could not parse key-value "%s". ' % (keyval,) +
+                        'It must follow the pattern "KEY=VALUE".')
         parser.print_help()
         sys.exit(1)
       else:
@@ -1266,10 +1321,12 @@ def execute_queries_non_interactive_mode(options):
     return
 
   queries = parse_query_text(query_text)
-  if not ImpalaShell(options).execute_query_list(queries):
+  shell = ImpalaShell(options)
+  if not (shell.execute_query_list(shell.cmdqueue) and
+          shell.execute_query_list(queries)):
     sys.exit(1)
 
-def main():
+if __name__ == "__main__":
   # pass defaults into option parser
   parser = get_option_parser(impala_shell_defaults)
   options, args = parser.parse_args()
@@ -1316,6 +1373,11 @@ def main():
   if not options.ssl and not options.creds_ok_in_clear and options.use_ldap:
     print_to_stderr("LDAP credentials may not be sent over insecure " +
                     "connections. Enable SSL or set --auth_creds_ok_in_clear")
+    sys.exit(1)
+
+  if not options.use_ldap and options.ldap_password_cmd:
+    print_to_stderr("Option --ldap_password_cmd requires using LDAP authentication " +
+                    "mechanism (-l)")
     sys.exit(1)
 
   if options.use_kerberos:
@@ -1377,7 +1439,7 @@ def main():
 
   intro = WELCOME_STRING
   if not options.ssl and options.creds_ok_in_clear and options.use_ldap:
-    intro += ("\n\\nLDAP authentication is enabled, but the connection to Impala is " +
+    intro += ("\n\nLDAP authentication is enabled, but the connection to Impala is "
               "not secured by TLS.\nALL PASSWORDS WILL BE SENT IN THE CLEAR TO IMPALA.\n")
 
   shell = ImpalaShell(options)
@@ -1416,6 +1478,3 @@ def main():
         if e.errno != errno.EINTR: raise
     finally:
       intro = ''
-
-if __name__ == "__main__":
-  main()

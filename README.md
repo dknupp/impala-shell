@@ -5,8 +5,8 @@
 ```
 $ virtualenv ~/path/to/my_virtualenv   # <-- This is a path of your choosing.
 $ source ~/path/to/my_virtualenv/bin/activate
-(my_virtualenv) $ pip install git+git://github.mtv.cloudera.com/dknupp/impala-shell.git
-(my_virtualenv) $ impala-shell -i my_impalad.foo.cloudera.com
+(my_virtualenv) $ pip install git+git://github.com/dknupp/impala-shell.git
+(my_virtualenv) $ impala-shell -i my_impalad.foo.com
 ```
 
 ## System preparation
@@ -68,7 +68,7 @@ always tell which environment you're working in.
 system python environment, you'll probably have to sudo the following command.)
 
 ```
-(my_virtualenv) $ pip install git+git://github.mtv.cloudera.com/dknupp/impala-shell.git
+(my_virtualenv) $ pip install git+git://github.com/dknupp/impala-shell.git
 ```
 
 
@@ -78,9 +78,9 @@ At this point, you can launch impala-shell as always. If you don't have a real
 cluster, you can connect to the mini-cluster on your dev machine.
 
 ```
-(my_virtualenv) $ impala-shell -i vc0728.halxg.cloudera.com
+(my_virtualenv) $ impala-shell -i my_impalad.foo.com
 Starting Impala Shell without Kerberos authentication
-Connected to vc0728.halxg.cloudera.com:21000
+Connected to my_impalad.foo.com:21000
 Server version: impalad version 2.9.0-SNAPSHOT RELEASE (build 2cd110014da78d3497529cdd32025b781935cc43)
 ***********************************************************************************
 Welcome to the Impala shell.
@@ -88,7 +88,7 @@ Welcome to the Impala shell.
 
 You can run a single query from the command line using the '-q' option.
 ***********************************************************************************
-[vc0728.halxg.cloudera.com:21000] >
+[my_impalad.foo.com:21000] >
 ```
 
 Note that if you install this on your dev machine (which why would you? since

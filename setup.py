@@ -2,12 +2,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import print_function, division
 
-import pip
 import sys
 
 from setuptools.command.test import test as TestCommand
 from setuptools import find_packages
-from pip.req import parse_requirements
 
 try:
     from setuptools import setup
@@ -28,9 +26,15 @@ class PyTest(TestCommand):
         sys.exit(errno)
 
 
-def requirements():
-    return [str(ir.req) for ir in parse_requirements('requirements.txt',
-                                                     session=False)]
+def parse_requirements(requirements_file='requirements.txt'):
+    """Parse requirements from a requirements file, stripping comments."""
+    lines = []
+    with open(requirements_file) as reqs:
+        for _ in reqs:
+            line = _.split('#')[0]
+            if line.strip():
+                lines.append(line)
+    return lines
 
 
 def get_version():
@@ -53,7 +57,7 @@ setup(
     packages=find_packages('impala_shell', exclude=["tests"]),
     package_dir={'': 'impala_shell'},
     include_package_data=True,
-    install_requires=requirements(),
+    install_requires=parse_requirements('requirements.txt'),
     tests_require=["pytest"],
     cmdclass={'test': PyTest},
     entry_points={

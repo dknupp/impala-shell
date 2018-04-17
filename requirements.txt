@@ -6,5 +6,5 @@ sasl==0.2.1
 setuptools==34.3.2
 six==1.10.0
 sqlparse==0.2.3
-thrift==0.10.0
+thrift==0.9.3
 thrift-sasl==0.2.1
